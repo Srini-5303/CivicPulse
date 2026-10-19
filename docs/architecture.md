@@ -58,10 +58,13 @@ A complaint is a duplicate when cosine similarity is at least 0.9 with a same-ca
 | complaints | Normalized fields, `raw_text_enc` (Fernet, key from `PII_KEY`), `text_scrubbed`, triage fields, `embedding vector(384)` |
 | incidents | Category, centroid, status, `detected_at` |
 | incident_complaints | Incident to complaint links |
-| drafts | `thread_id`, draft text, redacted text, citations, risk tier |
+| drafts | Draft ID (also the LangGraph `thread_id`), draft text, redacted text, spans, citations, risk tier |
 | approvals | Draft ID, reviewer, decision, edited text, reason |
 | audit_log | Append-only record of every decision |
 | kb_chunks | RAG chunks: source, text, embedding, `tsvector` |
 | sync_state | Last synced `opened_at` per CKAN resource |
+| outbox | Dev stand-in for email: recipient, subject, body per draft |
 
 Embeddings use local `all-MiniLM-L6-v2` (384 dimensions).
+
+`v_complaints_public` exposes complaint IDs, source, time, location, and triage fields, but no text or embeddings, because the history tool's results reach an LLM.
