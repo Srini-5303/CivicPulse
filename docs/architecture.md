@@ -29,6 +29,8 @@ All modes publish the same `Complaint` to `complaints.raw`; downstream services 
 - The two datasets have different structures (legacy case IDs are 12 digits, new ones start with `BCS-`), so each has its own mapper in `services/ingestion/mappers.py`. Read the NEW SYSTEM data dictionary before editing its mapper.
 - `source` is `legacy`, `new`, or `resident`.
 - Open311 is not used; it needs an approved API key.
+- Legacy records have no description field; `case_title` is the complaint text.
+- Legacy rows at exactly (42.3594, -71.0587) are City Hall placeholders for a missing location: the legacy mapper sets `lat`/`lon` to null, so they are triaged but skipped by dedupe and hotspot.
 
 ## Event Time
 
@@ -43,10 +45,14 @@ A complaint is a duplicate when cosine similarity is at least 0.9 with a same-ca
 - Every 60 s of event time, per category, run DBSCAN on complaints opened in the preceding 2 h.
 - Haversine metric, `eps = 0.5 km` (pass `0.5 / 6371` radians), `min_samples = 5`.
 - A cluster whose centroid is within `eps` of an open same-category incident attaches to it; otherwise it creates a new incident.
+- Only new incidents are published to `incidents.detected`; attaching complaints only adds `incident_complaints` links.
+- A jump in event time of several steps (such as a daily sync batch) runs detection once, not once per step.
 
 ## Messaging Rules
 
 - Idempotency key is `{source}:{source_id}`; consumers upsert, so replays are safe.
+- Triage is the only writer of `complaints` rows, upserting before it publishes, so later stages can read them.
+- IDs derived from a message (incident, draft, outbox) are UUIDv5 of its inputs, so a redelivered message cannot create a second row.
 - Commit the offset only after the DB write succeeds.
 - On failure, retry 3 times with backoff (1 s, 4 s, 16 s), then publish to `<topic>.dlq` with the error.
 - Every message has `schema_version`; bump it on breaking changes.

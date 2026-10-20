@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     app_db_password: str = ""
     history_ro_password: str = ""
+    pii_key: str = ""
+    agents_url: str = "http://localhost:8001"
 
 
 settings = Settings()

@@ -5,6 +5,7 @@
 `investigate -> retrieve -> draft -> redact -> assign_tier -> (auto_approve | human_review) -> publish`
 
 - `human_review` calls `interrupt()`; state is checkpointed with `PostgresSaver`, `thread_id` = draft ID.
+- Checkpoint tables are created by an Alembic migration that calls `PostgresSaver.setup()`. `langgraph` and `langgraph-checkpoint-postgres` are pinned; a version bump needs a new migration that calls `setup()` again.
 - The approval service resumes a thread with `POST /threads/{id}/resume` and the decision.
 - `reject` ends the graph with the reason recorded; `edit` sends the edited text back through `redact` before publishing.
 - Acknowledgments for non-duplicate complaints skip the graph: fixed template with reference ID, no LLM.

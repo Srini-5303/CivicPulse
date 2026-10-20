@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    make_url,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -24,6 +25,11 @@ EMBEDDING_DIM = 384
 
 engine = create_async_engine(settings.database_url)
 Session = async_sessionmaker(engine, expire_on_commit=False)
+
+
+def psycopg_url(url: str) -> str:
+    """LangGraph's checkpointer needs a plain psycopg URL, not the asyncpg one."""
+    return make_url(url).set(drivername="postgresql").render_as_string(hide_password=False)
 
 
 class Base(DeclarativeBase):

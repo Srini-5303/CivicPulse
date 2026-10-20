@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from libs.common.kafka import run_consumer
 from libs.common.schemas import Complaint, DeadLetter
+from tests.fakes import FakeProducer
 
 COMPLAINT = Complaint(
     source="legacy",
@@ -38,14 +39,6 @@ class FakeConsumer:
 
     async def commit(self, offsets: dict) -> None:
         self.events.append(f"commit:{next(iter(offsets.values()))}")
-
-
-class FakeProducer:
-    def __init__(self) -> None:
-        self.sent: list[tuple[str, bytes]] = []
-
-    async def send_and_wait(self, topic: str, value: bytes, key: bytes | None = None) -> None:
-        self.sent.append((topic, value))
 
 
 async def no_sleep(_: float) -> None:

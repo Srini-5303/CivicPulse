@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class Complaint(BaseModel):
@@ -26,7 +26,6 @@ class TriagedComplaint(Complaint):
     category: str
     department: str
     urgency: Literal["low", "medium", "high"]
-    embedding: list[float]
     duplicate_of: str | None
     triage_tier: int
 
@@ -48,6 +47,17 @@ class ApprovedResponse(BaseModel):
     complaint_ids: list[str]
     text: str
     risk_tier: Literal["auto", "review", "priority"]
+
+
+class ReviewDecision(BaseModel):
+    decision: Literal["approve", "reject"]
+    reason: str | None = None
+
+    @model_validator(mode="after")
+    def reject_needs_reason(self) -> "ReviewDecision":
+        if self.decision == "reject" and not self.reason:
+            raise ValueError("a rejection needs a reason")
+        return self
 
 
 class DeadLetter(BaseModel):

@@ -33,6 +33,21 @@ async def publish(producer: AIOKafkaProducer, topic: str, key: str, message: Bas
     await producer.send_and_wait(topic, message.model_dump_json().encode(), key=key.encode())
 
 
+async def serve[M: BaseModel](
+    topic: str,
+    group: str,
+    producer: AIOKafkaProducer,
+    model: type[M],
+    handler: Callable[[M], Awaitable[None]],
+) -> None:
+    consumer = make_consumer(topic, group)
+    await consumer.start()
+    try:
+        await run_consumer(consumer, producer, model, handler)
+    finally:
+        await consumer.stop()
+
+
 async def run_consumer[M: BaseModel](
     consumer: Any,
     producer: Any,
