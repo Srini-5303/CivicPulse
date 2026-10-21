@@ -30,7 +30,7 @@ All modes publish the same `Complaint` to `complaints.raw`; downstream services 
 - `source` is `legacy`, `new`, or `resident`.
 - Open311 is not used; it needs an approved API key.
 - Legacy records have no description field; `case_title` is the complaint text.
-- Legacy rows at exactly (42.3594, -71.0587) are City Hall placeholders for a missing location: the legacy mapper sets `lat`/`lon` to null, so they are triaged but skipped by dedupe and hotspot.
+- Legacy rows at exactly (42.3594, -71.0587), or with `location_street_name` `1 City Hall Plz` or `100 City Hall Plz`, are City Hall placeholders for a missing location: the legacy mapper sets `lat`/`lon` to null, so they are triaged but skipped by dedupe and hotspot. Intersections and `City Hall Ave` addresses are real locations.
 
 ## Event Time
 
@@ -45,6 +45,7 @@ A complaint is a duplicate when cosine similarity is at least 0.9 with a same-ca
 - Every 60 s of event time, per category, run DBSCAN on complaints opened in the preceding 2 h.
 - Haversine metric, `eps = 0.5 km` (pass `0.5 / 6371` radians), `min_samples = 5`.
 - A cluster whose centroid is within `eps` of an open same-category incident attaches to it; otherwise it creates a new incident.
+- An open incident closes after 24 h of event time with no new linked complaint. Half of nearby same-type repeat reports in early 2025 came 6 h or more apart, mostly across the overnight lull, so a shorter limit splits one issue into two; 24 h keeps 70% of repeats within a week in the same incident.
 - Only new incidents are published to `incidents.detected`; attaching complaints only adds `incident_complaints` links.
 - A jump in event time of several steps (such as a daily sync batch) runs detection once, not once per step.
 

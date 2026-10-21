@@ -5,8 +5,9 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from aiokafka import AIOKafkaProducer
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.common.db import ComplaintRow, IncidentComplaintRow, IncidentRow, Session
 from libs.common.kafka import make_producer, publish, serve
@@ -18,6 +19,9 @@ log = logging.getLogger(__name__)
 
 WINDOW = timedelta(hours=2)
 STEP = timedelta(seconds=60)
+# A full day of event-time quiet: shorter splits issues reported in the evening and again the
+# next morning (half of nearby same-type repeats in 2025 came 6+ h apart).
+CLOSE_AFTER = timedelta(hours=24)
 TOPIC = "incidents.detected"
 
 
@@ -38,6 +42,7 @@ class Detector:
 
 async def detect(producer: AIOKafkaProducer, now: datetime) -> None:
     async with Session.begin() as session:
+        await close_quiet_incidents(session, now)
         rows = await session.execute(
             select(ComplaintRow.id, ComplaintRow.category, ComplaintRow.lat, ComplaintRow.lon)
             .where(ComplaintRow.opened_at > now - WINDOW, ComplaintRow.opened_at <= now)
@@ -105,6 +110,20 @@ async def detect(producer: AIOKafkaProducer, now: datetime) -> None:
         for incident in new_incidents:
             log.info("incident detected", extra={"incident_id": str(incident.incident_id)})
             await publish(producer, TOPIC, str(incident.incident_id), incident)
+
+
+async def close_quiet_incidents(session: AsyncSession, now: datetime) -> None:
+    quiet = (
+        select(IncidentComplaintRow.incident_id)
+        .join(ComplaintRow, ComplaintRow.id == IncidentComplaintRow.complaint_id)
+        .group_by(IncidentComplaintRow.incident_id)
+        .having(func.max(ComplaintRow.opened_at) < now - CLOSE_AFTER)
+    )
+    await session.execute(
+        update(IncidentRow)
+        .where(IncidentRow.status == "open", IncidentRow.id.in_(quiet))
+        .values(status="closed")
+    )
 
 
 async def main() -> None:

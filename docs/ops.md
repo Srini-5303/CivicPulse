@@ -3,6 +3,7 @@
 ## Environments
 
 - Local: `docker compose up -d` runs Redpanda, Postgres, Redis, Prometheus, Grafana, Ollama, and all services. Tracing uses Langfuse Cloud free tier.
+- Tests: `uv run pytest` needs the local compose Postgres and drops and recreates `civicpulse_test` from migrations on each run; tests never touch the dev database.
 - Prod: one Oracle Cloud Always Free Ampere VM (ARM64) running the same compose file plus `infra/compose.prod.yml`, Caddy for TLS, Cloudflare DNS in front.
 - CI (GitHub Actions): ruff, pytest, eval slices, pip-audit, build arm64 images to GHCR. Deploy on tag over SSH with `docker compose pull && docker compose up -d`.
 

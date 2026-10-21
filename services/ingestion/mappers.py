@@ -6,12 +6,13 @@ from libs.common.schemas import Complaint
 
 BOSTON_TZ = ZoneInfo("America/New_York")
 
-# Legacy rows with no real location carry City Hall's coordinates instead of blanks.
+# Legacy rows with no real location carry City Hall's coordinates or address instead of blanks.
 CITY_HALL_PLACEHOLDER = (42.3594, -71.0587)
+CITY_HALL_PLACEHOLDER_STREETS = {"1 City Hall Plz", "100 City Hall Plz"}
 
 
 def map_legacy(row: dict[str, str], encrypt: Callable[[str], str]) -> Complaint:
-    lat, lon = _legacy_location(row["latitude"], row["longitude"])
+    lat, lon = _legacy_location(row)
     return Complaint(
         source="legacy",
         source_id=row["case_enquiry_id"],
@@ -26,10 +27,12 @@ def map_legacy(row: dict[str, str], encrypt: Callable[[str], str]) -> Complaint:
     )
 
 
-def _legacy_location(lat: str, lon: str) -> tuple[float | None, float | None]:
-    if not lat or not lon:
+def _legacy_location(row: dict[str, str]) -> tuple[float | None, float | None]:
+    if not row["latitude"] or not row["longitude"]:
         return None, None
-    point = (float(lat), float(lon))
+    if row["location_street_name"] in CITY_HALL_PLACEHOLDER_STREETS:
+        return None, None
+    point = (float(row["latitude"]), float(row["longitude"]))
     if point == CITY_HALL_PLACEHOLDER:
         return None, None
     return point
