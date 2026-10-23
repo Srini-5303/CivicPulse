@@ -15,9 +15,24 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Owned by LangGraph's PostgresSaver (created in 0002), not by our models.
+CHECKPOINT_TABLES = {
+    "checkpoints",
+    "checkpoint_blobs",
+    "checkpoint_writes",
+    "checkpoint_migrations",
+}
+
+
+def include_object(obj, name, type_, reflected, compare_to) -> bool:
+    table = obj.table.name if type_ == "index" else name
+    return table not in CHECKPOINT_TABLES
+
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection, target_metadata=target_metadata, include_object=include_object
+    )
     with context.begin_transaction():
         context.run_migrations()
 

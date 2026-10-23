@@ -11,7 +11,9 @@ COMPLAINT = Complaint(
     opened_at=datetime(2025, 1, 1, tzinfo=UTC),
     lat=42.35,
     lon=-71.06,
-    category_raw="Pothole",
+    category_raw="Request for Pothole Repair",
+    source_category="Pothole",
+    source_department="Public Works Department (PWD)",
     raw_text_enc="enc",
     text_scrubbed="pothole on [ADDRESS]",
 )

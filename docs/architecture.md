@@ -20,17 +20,32 @@ All modes publish the same `Complaint` to `complaints.raw`; downstream services 
 
 | Mode | Source | Used for |
 |---|---|---|
-| replay | Yearly CSVs in `data/311/` | Demos, load tests, evals |
+| replay | Yearly CSVs in `data/311/` (`legacy_*.csv`, `new_*.csv`; git-ignored) | Demos, load tests, evals |
 | sync | CKAN `datastore_search_sql` on data.boston.gov (no key) | Daily job at 06:00 ET for new records |
 | resident | `POST /complaints` | Direct submissions |
 
-- Replay publishes at original `opened_at` spacing divided by `--speed` (1 is real time, 144 replays a day in 10 min).
-- Sync queries rows newer than the cursor in `sync_state` from two resources: legacy 2026 (`1a0b420d-99f1-4887-9851-990b2a5a6e17`) and NEW SYSTEM (`254adca6-64ab-4c5c-9fc0-a6da622be185`).
+- Replay publishes at original `opened_at` spacing divided by `--speed` (1 is real time, 144 replays a day in 10 min). `--from`/`--to` are Boston local dates.
+- Sync queries rows newer than the cursor in `sync_state` from two resources: legacy 2026 (`1a0b420d-99f1-4887-9851-990b2a5a6e17`) and NEW SYSTEM (`254adca6-64ab-4c5c-9fc0-a6da622be185`). It pages 1,000 rows at a time with `>=` the cursor, so rows tied at a page boundary are re-read rather than skipped, and saves the cursor after each page is published. With no cursor it starts one day back; history comes from replay. A failed run leaves the cursor at the last published page, and the next run resumes there. `python -m services.ingestion.sync --once` runs it immediately.
+- Both systems are live: the city moves services from legacy to NEW SYSTEM one at a time (for example missed trash moved in June 2026), so the two hold different cases, not copies.
+- Legacy timestamps are Boston local time without an offset; NEW SYSTEM timestamps are UTC.
 - The two datasets have different structures (legacy case IDs are 12 digits, new ones start with `BCS-`), so each has its own mapper in `services/ingestion/mappers.py`. Read the NEW SYSTEM data dictionary before editing its mapper.
 - `source` is `legacy`, `new`, or `resident`.
 - Open311 is not used; it needs an approved API key.
-- Legacy records have no description field; `case_title` is the complaint text.
-- Legacy rows at exactly (42.3594, -71.0587), or with `location_street_name` `1 City Hall Plz` or `100 City Hall Plz`, are City Hall placeholders for a missing location: the legacy mapper sets `lat`/`lon` to null, so they are triaged but skipped by dedupe and hotspot. Intersections and `City Hall Ave` addresses are real locations.
+- Neither system has a resident description field: legacy uses `case_title` as the complaint text and NEW SYSTEM uses `service_name` (or `case_topic` when it is blank). Only resident submissions carry free text.
+- Legacy rows at exactly (42.3594, -71.0587), or with `location_street_name` `1 City Hall Plz` or `100 City Hall Plz`, are City Hall placeholders for a missing location, as are NEW SYSTEM rows at street number `1` on `City Hall Plz`: the mappers set `lat`/`lon` to null, so they are triaged but skipped by dedupe and hotspot. Intersections and `City Hall Ave` addresses are real locations.
+- `POST /complaints` takes `text` and `lat`/`lon` (required, no geocoder, limited to a Boston bounding box), is rate limited to 10 per minute per IP in Redis, and returns the complaint key (`resident:<id>`) as the reference ID.
+
+## Categories
+
+- The canonical categories are NEW SYSTEM `service_name`s, since that is where the city is moving, plus legacy types with no NEW SYSTEM equivalent yet.
+- `data/categories.csv` maps every legacy `type` to a canonical category and department; review it when the city moves another service. A legacy type missing from it keeps its own name and is logged.
+- NEW SYSTEM rows use their own `service_name` and `assigned_department`.
+- These become `source_category` and `source_department` on `Complaint`; resident submissions have none, so triage must classify them.
+
+## PII Scrub
+
+- Ingestion scrubs every text with `libs/common/pii.py` (shared with redaction): Presidio `PERSON`, `PHONE_NUMBER`, and `EMAIL_ADDRESS` at score 0.3 or more become `[REDACTED: <type>]`, and house numbers become their block ("the 200 block of Elm St").
+- A `PERSON` match made only of words from category names is kept, because title-case categories ("Missed Trash: District 07") look like names to the model. Parks named after people ("Franklin Park") are still over-scrubbed until the street and place allowlist lands with redaction.
 
 ## Event Time
 
@@ -48,6 +63,7 @@ A complaint is a duplicate when cosine similarity is at least 0.9 with a same-ca
 - An open incident closes after 24 h of event time with no new linked complaint. Half of nearby same-type repeat reports in early 2025 came 6 h or more apart, mostly across the overnight lull, so a shorter limit splits one issue into two; 24 h keeps 70% of repeats within a week in the same incident.
 - Only new incidents are published to `incidents.detected`; attaching complaints only adds `incident_complaints` links.
 - A jump in event time of several steps (such as a daily sync batch) runs detection once, not once per step.
+- A jump back past the whole window (a replay of older data after newer data) restarts event time instead of skipping the older complaints. Replay and live sync should not run into the same pipeline at the same time.
 
 ## Messaging Rules
 
@@ -62,7 +78,7 @@ A complaint is a duplicate when cosine similarity is at least 0.9 with a same-ca
 
 | Table | Contents |
 |---|---|
-| complaints | Normalized fields, `raw_text_enc` (Fernet, key from `PII_KEY`), `text_scrubbed`, triage fields, `embedding vector(384)` |
+| complaints | Normalized fields, `source_category`/`source_department`, `raw_text_enc` (Fernet, key from `PII_KEY`), `text_scrubbed`, triage fields, `embedding vector(384)` |
 | incidents | Category, centroid, status, `detected_at` |
 | incident_complaints | Incident to complaint links |
 | drafts | Draft ID (also the LangGraph `thread_id`), draft text, redacted text, spans, citations, risk tier |

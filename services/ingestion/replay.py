@@ -2,17 +2,22 @@ import argparse
 import asyncio
 import csv
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import date, datetime
 from pathlib import Path
 
-from cryptography.fernet import Fernet
-
-from libs.common.config import settings
 from libs.common.kafka import make_producer, publish
 from libs.common.logging import setup_logging
 from libs.common.schemas import Complaint
-from services.ingestion.mappers import map_legacy
+from services.ingestion.mappers import (
+    BOSTON_TZ,
+    Protect,
+    legacy_opened_at,
+    map_legacy,
+    map_new,
+    new_opened_at,
+)
+from services.ingestion.privacy import make_protect
 
 log = logging.getLogger(__name__)
 
@@ -24,33 +29,38 @@ def pacing_delay(previous: datetime, current: datetime, speed: float) -> float:
     return (current - previous).total_seconds() / speed
 
 
-def load_legacy(start: date, end: date) -> Iterator[Complaint]:
-    fernet = Fernet(settings.pii_key)
+Mapper = Callable[[dict[str, str], Protect], Complaint]
+SOURCES: tuple[tuple[str, Callable[[dict[str, str]], datetime], Mapper], ...] = (
+    ("legacy_*.csv", legacy_opened_at, map_legacy),
+    ("new_*.csv", new_opened_at, map_new),
+)
 
-    def encrypt(text: str) -> str:
-        return fernet.encrypt(text.encode()).decode()
 
-    first, last = start.isoformat(), end.isoformat()
-    for path in sorted(DATA_DIR.glob("legacy_*.csv")):
-        with path.open(newline="") as f:
-            for row in csv.DictReader(f):
-                # Cheap string filter on the ISO date prefix before parsing the whole row.
-                if first <= row["open_dt"][:10] <= last:
-                    yield map_legacy(row, encrypt)
+def load(start: date, end: date) -> Iterator[tuple[datetime, Mapper, dict[str, str]]]:
+    """Rows opened on [start, end] Boston local dates, unmapped so scrubbing waits for publish."""
+    for pattern, opened_at, mapper in SOURCES:
+        for path in sorted(DATA_DIR.glob(pattern)):
+            with path.open(newline="") as f:
+                for row in csv.DictReader(f):
+                    opened = opened_at(row)
+                    if start <= opened.astimezone(BOSTON_TZ).date() <= end:
+                        yield opened, mapper, row
 
 
 async def replay(start: date, end: date, speed: float) -> None:
-    complaints = sorted(load_legacy(start, end), key=lambda c: c.opened_at)
-    log.info("replaying %d complaints", len(complaints))
+    rows = sorted(load(start, end), key=lambda r: r[0])
+    log.info("replaying %d complaints", len(rows))
+    protect = make_protect()
     producer = make_producer()
     await producer.start()
     try:
         previous = None
-        for complaint in complaints:
+        for opened, mapper, row in rows:
             if previous is not None:
-                await asyncio.sleep(pacing_delay(previous, complaint.opened_at, speed))
+                await asyncio.sleep(pacing_delay(previous, opened, speed))
+            complaint = mapper(row, protect)
             await publish(producer, TOPIC, complaint.key, complaint)
-            previous = complaint.opened_at
+            previous = opened
     finally:
         await producer.stop()
     log.info("replay done")

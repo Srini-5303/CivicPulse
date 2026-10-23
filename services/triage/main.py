@@ -14,8 +14,8 @@ def classify(complaint: Complaint) -> TriagedComplaint:
     # Placeholder until the tier 0 classifier and LLM cascade land.
     return TriagedComplaint(
         **complaint.model_dump(),
-        category=complaint.category_raw,
-        department="unassigned",
+        category=complaint.source_category or "Other",
+        department=complaint.source_department or "Boston 311",
         urgency="medium",
         duplicate_of=None,
         triage_tier=0,

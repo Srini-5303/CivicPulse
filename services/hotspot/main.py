@@ -33,8 +33,12 @@ class Detector:
         self.next_run: datetime | None = None
 
     async def handle(self, complaint: TriagedComplaint) -> None:
-        if self.next_run is not None and complaint.opened_at < self.next_run:
-            return
+        if self.next_run is not None:
+            # A jump back past the whole window means a replay of older data started after
+            # newer data; treat it as a new timeline instead of skipping all of it.
+            rewound = complaint.opened_at < self.next_run - STEP - WINDOW
+            if complaint.opened_at < self.next_run and not rewound:
+                return
         await detect(self.producer, complaint.opened_at)
         # A jump of several steps (e.g. a daily sync batch) runs once, not once per step.
         self.next_run = complaint.opened_at + STEP

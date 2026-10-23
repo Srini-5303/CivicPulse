@@ -13,7 +13,11 @@ class Complaint(BaseModel):
     # None when the source has no real location (e.g. the legacy City Hall placeholder).
     lat: float | None
     lon: float | None
-    category_raw: str
+    # As given by the source system; None for resident submissions.
+    category_raw: str | None
+    # Canonical labels from data/categories.csv (legacy) or the new system's own fields.
+    source_category: str | None
+    source_department: str | None
     raw_text_enc: str
     text_scrubbed: str
 

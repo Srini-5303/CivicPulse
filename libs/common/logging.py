@@ -4,7 +4,16 @@ import sys
 from datetime import UTC, datetime
 
 # Only these extras are emitted, so a stray `extra={"text": ...}` can never leak complaint text.
-_CONTEXT_FIELDS = ("trace_id", "complaint_id", "incident_id", "draft_id", "topic", "offset")
+_CONTEXT_FIELDS = (
+    "trace_id",
+    "complaint_id",
+    "incident_id",
+    "draft_id",
+    "topic",
+    "offset",
+    "category",
+    "resource_id",
+)
 
 
 class JsonFormatter(logging.Formatter):

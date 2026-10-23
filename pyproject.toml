@@ -7,11 +7,13 @@ dependencies = [
     "alembic>=1.20.0",
     "asyncpg>=0.32.0",
     "cryptography>=50.0.2",
+    "en-core-web-lg",
     "fastapi>=0.150.0",
     "httpx>=0.28.1",
     "langgraph==1.2.16",
     "langgraph-checkpoint-postgres==3.2.0",
     "pgvector>=0.5.1",
+    "presidio-analyzer>=2.2.364",
     "psycopg[binary]>=3.3.6",
     "pydantic>=2.14.1",
     "pydantic-settings>=2.16.0",
@@ -24,6 +26,9 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+en-core-web-lg = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl" }
 
 [tool.ruff]
 line-length = 100

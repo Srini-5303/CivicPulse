@@ -4,7 +4,8 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 
 from libs.common.db import ComplaintRow, IncidentComplaintRow, IncidentRow, Session
-from services.hotspot.main import CLOSE_AFTER, detect
+from libs.common.schemas import TriagedComplaint
+from services.hotspot.main import CLOSE_AFTER, Detector, detect
 from tests.fakes import FakeProducer
 
 T0 = datetime(2025, 1, 2, 9, 0, tzinfo=UTC)
@@ -53,3 +54,38 @@ async def test_incident_closes_after_a_quiet_day_of_event_time() -> None:
         statuses = dict((await session.execute(select(IncidentRow.id, IncidentRow.status))).all())
     assert statuses[quiet] == "closed"
     assert statuses[active] == "open"
+
+
+async def test_replay_of_older_data_restarts_event_time(monkeypatch) -> None:
+    runs: list[datetime] = []
+
+    async def record(_producer, now: datetime) -> None:
+        runs.append(now)
+
+    monkeypatch.setattr("services.hotspot.main.detect", record)
+    detector = Detector(FakeProducer())
+    june = T0.replace(month=6)
+    for opened_at in (T0, T0 + timedelta(seconds=30), june, june + timedelta(seconds=90)):
+        await detector.handle(_triaged(opened_at))
+
+    assert runs == [T0, june, june + timedelta(seconds=90)]
+
+
+def _triaged(opened_at: datetime) -> TriagedComplaint:
+    return TriagedComplaint(
+        source="legacy",
+        source_id="1",
+        opened_at=opened_at,
+        lat=42.35,
+        lon=-71.06,
+        category_raw=None,
+        source_category=None,
+        source_department=None,
+        raw_text_enc="enc",
+        text_scrubbed="",
+        category="Pothole",
+        department="Public Works Department (PWD)",
+        urgency="medium",
+        duplicate_of=None,
+        triage_tier=0,
+    )
